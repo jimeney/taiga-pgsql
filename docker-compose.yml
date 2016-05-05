@@ -1,0 +1,41 @@
+version: '2'
+
+volumes:
+  postgres_data: {}
+  taiga_static: {}
+  taiga_media: {}
+
+networks:
+  backend: {}
+
+services:
+  postgres:
+    # https://hub.docker.com/_/postgres/
+    image: postgres
+    networks:
+      - backend
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d:ro
+    env_file:
+      - ./postgres.env
+      - ./taiga-db.env
+
+  taiga:
+    # https://hub.docker.com/r/andrey01/taiga
+    image: andrey01/taiga
+    # build: .
+    networks:
+      - backend
+    ports:
+      - 80:80
+    volumes:
+      - taiga_static:/opt/taiga/static
+      - taiga_media:/opt/taiga/media
+    env_file:
+      - ./taiga.env
+      - ./taiga-db.env
+    environment:
+      - TZ=Europe/Amsterdam
+    depends_on:
+      - postgres

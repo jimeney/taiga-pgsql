@@ -1,0 +1,49 @@
+server {
+    listen 80 default_server;
+    server_name _;
+
+    large_client_header_buffers 4 32k;
+    client_max_body_size 50M;
+    charset utf-8;
+
+    access_log /var/log/taiga/nginx.access.log;
+    error_log /var/log/taiga/nginx.error.log;
+
+    # Frontend
+    location / {
+        root ${DATA}/taiga-front-dist/dist/;
+        try_files ${ESC}uri ${ESC}uri/ /index.html;
+    }
+
+    # Backend
+    location /api {
+        proxy_set_header Host ${ESC}http_host;
+        proxy_set_header X-Real-IP ${ESC}remote_addr;
+        proxy_set_header X-Scheme ${ESC}scheme;
+        proxy_set_header X-Forwarded-Proto ${ESC}scheme;
+        proxy_set_header X-Forwarded-For ${ESC}proxy_add_x_forwarded_for;
+        proxy_pass http://127.0.0.1:8001/api;
+        proxy_redirect off;
+    }
+
+    # Django admin access (/admin/)
+    location /admin {
+        proxy_set_header Host ${ESC}http_host;
+        proxy_set_header X-Real-IP ${ESC}remote_addr;
+        proxy_set_header X-Scheme ${ESC}scheme;
+        proxy_set_header X-Forwarded-Proto ${ESC}scheme;
+        proxy_set_header X-Forwarded-For ${ESC}proxy_add_x_forwarded_for;
+        proxy_pass http://127.0.0.1:8001${ESC}request_uri;
+        proxy_redirect off;
+    }
+
+    # Static files
+    location /static {
+        alias ${DATA}/static;
+    }
+
+    # Media files
+    location /media {
+        alias ${DATA}/media;
+    }
+}

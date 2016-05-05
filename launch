@@ -1,0 +1,86 @@
+#!/bin/bash
+
+# Debug
+# set -x
+
+# Do Not Change these variables unless you know what you are doing
+export ESC=$
+export DJANGO_SECRET_KEY=$(openssl rand -hex 32)
+
+# Default variables. These shall be overridden :-)
+export GUNICORN_WORKERS=${GUNICORN_WORKERS:-1}
+export SITE_URI=${SITE_URI:-http://example.com}
+export SITE_FQDN=$(echo $SITE_URI | sed -e "s/[^/]*\/\/\([^@]*@\)\?\([^:/]*\).*/\2/")
+[ "${SITE_URI::5}" == "https" ] && SITE_SCHEME="https" || SITE_SCHEME="http"
+export SITE_SCHEME
+[ ${PUBLIC_REGISTER,,} == "false" ] \
+&& { PUBLIC_REGISTER="False"; PUBLIC_REGISTER_JS="false"; }  \
+|| { PUBLIC_REGISTER="True"; PUBLIC_REGISTER_JS="true"; }
+export PUBLIC_REGISTER PUBLIC_REGISTER_JS
+export ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+export NOREPLY_EMAIL=${NOREPLY_EMAIL:-no-reply@example.com}
+export TAIGA_DB_HOST=${TAIGA_DB_HOST:-postgres}
+export TAIGA_DB_PORT=${TAIGA_DB_PORT:-5432}
+export TAIGA_DB_NAME=${TAIGA_DB_NAME:-taiga}
+export TAIGA_DB_USER=${TAIGA_DB_USER:-taiga}
+export TAIGA_DB_PASSWORD=${TAIGA_DB_PASSWORD:-mysecretpassword}
+
+export EMAIL_HOST=${EMAIL_HOST:-localhost}
+export EMAIL_HOST_USER=${EMAIL_HOST_USER:-}
+export EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD:-}
+export EMAIL_HOST_PORT=${EMAIL_HOST_PORT:-587}
+export EMAIL_USE_TLS=${EMAIL_USE_TLS:-False}
+export EMAIL_BACKEND=${EMAIL_BACKEND:-django.core.mail.backends.smtp.EmailBackend}
+
+
+# Generate configs based on the template seeds
+envsubst < /tmp/taiga.tmpl > /etc/nginx/sites-enabled/taiga
+envsubst < /tmp/circus.ini.tmpl > $DATA/circus.ini
+envsubst < /tmp/conf.json.tmpl > $DATA/taiga-front-dist/dist/conf.json
+envsubst < /tmp/local.py.tmpl > $DATA/taiga-back/settings/local.py
+envsubst < /tmp/already_initialized.tmpl > /already_initialized
+chmod +x /already_initialized
+
+# Keep sensitive information out of here
+unset DJANGO_SECRET_KEY TAIGA_DB_PASSWORD
+
+# Make sure the data is readable
+chown -Rh $USER:$GROUP $DATA
+
+# Make sure the PostgreSQL database is up and ready
+while ! ping -c 1 -W 1 $TAIGA_DB_HOST >/dev/null 2>&1; do
+  echo "Waiting for $TAIGA_DB_HOST to be Up ..."
+  sleep 1
+done
+
+while ! timeout 1 bash -c 'cat < /dev/null > /dev/tcp/$TAIGA_DB_HOST/$TAIGA_DB_PORT' >/dev/null 2>&1; do
+  echo "Waiting for $TAIGA_DB_HOST:$TAIGA_DB_PORT to be Ready ..."
+  sleep 1
+done
+
+# This will make a tiny delay which will help to ensure the database is up and
+# running before it will be seeded/updated
+/already_initialized
+
+# Upgrade DB schemas, etc...
+# This is important when Taiga's codebase gets updated
+su -s /bin/sh $USER -c '. $DATA/venvtaiga/bin/activate
+cd $DATA/taiga-back
+python manage.py migrate --noinput
+/already_initialized || ( python manage.py loaddata initial_user \
+                       && python manage.py loaddata initial_project_templates \
+                       && python manage.py loaddata initial_role \
+                       && echo "First run: A new user admin with password 123123 has been created. Please change the password once you login." )
+python manage.py compilemessages
+python manage.py collectstatic --noinput
+deactivate'
+
+# (Optional) Fill Taiga with the Sample data
+# su -s /bin/sh $USER -c '. $DATA/venvtaiga/bin/activate
+# cd $DATA/taiga-back
+# python manage.py sample_data
+# deactivate'
+
+# Launch the backend
+service nginx start
+su -s /bin/sh $USER -c '/usr/local/bin/circusd "$DATA/circus.ini"'

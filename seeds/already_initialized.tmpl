@@ -1,0 +1,36 @@
+#!$DATA/venvtaiga/bin/python
+# A simple script that checks whether the 'admin' user has been created.
+# It returns 0 on success and 1 on failure.
+# Based on this the /launch script will decide whether to create the default
+# admin user or not.
+# TODO: in some cases one may want to rename the 'admin' user, causing the
+# script to create a backdoor admin:123123. We need to take this into account!
+import os
+import sys
+sys.path.append('$DATA/taiga-back')
+
+from django.contrib.auth import get_user_model
+from django.core.wsgi import get_wsgi_application
+from django.db import utils
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "settings")
+application = get_wsgi_application()
+User = get_user_model()
+
+users_num = 0
+
+try:
+    users_num = User.objects.filter(username='admin').count()
+except utils.OperationalError as e:
+    print('(%s): Unable to connect to a database' % type(e))
+    pass
+except utils.ProgrammingError as e:
+    print('(%s): First run detected' % type(e))
+    pass
+
+if users_num > 0:
+    rc = 0
+else:
+    rc = 1
+
+sys.exit(rc)

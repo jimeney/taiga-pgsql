@@ -1,0 +1,19 @@
+Package: *
+Pin: release a=jessie
+Pin-Priority: 995
+
+Package: *
+Pin: release a=jessie-updates
+Pin-Priority: 995
+
+Package: *
+Pin: release a=testing
+Pin-Priority: 995
+
+Package: *
+Pin: release o=Debian,a=testing,l=Debian-Security
+Pin-Priority: 996
+
+Package: *
+Pin: release o=Debian,a=jessie,l=Debian-Security
+Pin-Priority: 996
